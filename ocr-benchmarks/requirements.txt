@@ -1,0 +1,18 @@
+# Phase 1 benchmark harness — shared Python deps.
+#
+# Only the Tesseract adapter is a direct Python dependency here. The other
+# four candidates bring their own environments (roadmap §8.5):
+#   - RivoksLab/paddleocr-hebrew → PaddleOCR/ONNX runtime, installed in its
+#                                  own venv or managed via models_dir.
+#   - Kraken                     → `pip install kraken==7.1` in its own venv.
+#   - IronOCR                    → a compiled C# worker (IronOcr NuGet,
+#                                  .NET runtime), driven via bridge_path.
+#   - ABBYY FineReader Engine    → licensed local SDK, driven via a C#/C++
+#                                  bridge executable at bridge_path.
+#
+# Keeping those out of this file avoids dependency conflicts and keeps a
+# BLOCKED candidate's absence explicit (roadmap §6).
+
+pytesseract>=0.3.10
+Pillow>=10.0.0
+PyYAML>=6.0

@@ -1,0 +1,69 @@
+# Phase 1 benchmark config — exactly six candidates (roadmap §4).
+#
+# All local, no cloud OCR, no LLM/VLM at extraction time. Within-candidate
+# configurations (Paddle word/line; Tesseract best/fast; language-pack
+# tiers; etc.) nest under their candidate — never add a seventh engine.
+#
+# Each `id` is recorded in the run manifest; keep it stable so results
+# compare across runs. Missing binaries/trials/weights produce BLOCKED
+# rows automatically (see benchmarks/ocr/run.py).
+
+run_id: phase1
+manifest: ../data/manifest.example.jsonl
+
+engines:
+  # Candidate 1 — RivoksLab/paddleocr-hebrew
+  - id: paddleocr-hebrew-server-svtrv2-word
+    adapter: paddleocr-hebrew
+    params:
+      detection: word
+      recognizer: server-svtrv2
+      # models_dir: C:\models\paddleocr-hebrew
+  - id: paddleocr-hebrew-server-svtrv2-line
+    adapter: paddleocr-hebrew
+    params:
+      detection: line
+      recognizer: server-svtrv2
+      # models_dir: C:\models\paddleocr-hebrew
+
+  # Candidate 2 — Tesseract + tessdata_best
+  - id: tesseract-best-heb-eng-psm3
+    adapter: tesseract
+    params:
+      lang: heb+eng
+      psm: 3
+      oem: 1
+      # tessdata_dir: C:\Program Files\Tesseract-OCR\tessdata_best
+      # tesseract_cmd: C:\Program Files\Tesseract-OCR\tesseract.exe
+
+  # Candidate 3 — Tesseract + tessdata_fast
+  - id: tesseract-fast-heb-eng-psm3
+    adapter: tesseract
+    params:
+      lang: heb+eng
+      psm: 3
+      oem: 1
+      # tessdata_dir: C:\Program Files\Tesseract-OCR\tessdata_fast
+      # tesseract_cmd: C:\Program Files\Tesseract-OCR\tesseract.exe
+
+  # Candidate 4 — Kraken 7.1 + multilingual medium
+  - id: kraken-medium-cpu
+    adapter: kraken
+    params:
+      device: cpu
+      # recognition_model: C:\models\kraken\medium.safetensors
+      # segmentation_model: C:\models\kraken\segmentation.safetensors
+
+  # Candidate 5 — IronOCR (local .NET bridge)
+  - id: ironocr-heb-ara-eng
+    adapter: ironocr
+    params:
+      lang: Hebrew,Arabic,English
+      # bridge_path: C:\dev\tools\ironocr-worker\bin\Release\IronOcrWorker.exe
+
+  # Candidate 6 — ABBYY FineReader Engine (local SDK bridge)
+  - id: abbyy-fre12-heb-ara-eng
+    adapter: abbyy
+    params:
+      lang: Hebrew,Arabic,English
+      # bridge_path: C:\dev\tools\abbyy-worker\bin\Release\AbbyyWorker.exe
