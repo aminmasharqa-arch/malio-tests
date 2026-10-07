@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Malio.OcrBench.IronOcrWorker</RootNamespace>
+    <AssemblyName>IronOcrWorker</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <!--
+    IronOCR candidate #5 bridge for the OCR benchmark harness
+    (see ocr-benchmarks/OCR_BENCHMARK_ROADMAP.md §4 and §8.5).
+
+    Pins must be recorded in the run manifest. If you upgrade IronOcr or
+    the language pack, re-run Phase 1 and record the new SHA-256s.
+
+    Licensing: IronOcr requires a commercial license for production use.
+    Set the IRONOCR_LICENSE_KEY environment variable at run time; the
+    worker reads it before any OCR call. Never check license keys into
+    source control.
+  -->
+  <ItemGroup>
+    <PackageReference Include="IronOcr" Version="2026.10.2" />
+    <PackageReference Include="IronOcr.Languages.Hebrew" Version="2020.11.2" />
+    <PackageReference Include="IronOcr.Languages.Arabic" Version="2020.11.2" />
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

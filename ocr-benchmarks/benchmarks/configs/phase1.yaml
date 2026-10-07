@@ -56,12 +56,12 @@ engines:
       recognition_model: ~/AppData/Local/htrmopo/htrmopo/1980fa54-b49e-5256-95b6-928290bc48f8/medium.safetensors
       # segmentation_model omitted → use Kraken's bundled blla.mlmodel
 
-  # Candidate 5 — IronOCR (local .NET bridge)
+  # Candidate 5 — IronOCR (local .NET bridge; set IRONOCR_LICENSE_KEY env var)
   - id: ironocr-heb-ara-eng
     adapter: ironocr
     params:
-      lang: Hebrew,Arabic,English
-      # bridge_path: C:\dev\tools\ironocr-worker\bin\Release\IronOcrWorker.exe
+      lang: Hebrew,English
+      bridge_path: ../../bridges/ironocr-worker/bin/Release/net9.0/IronOcrWorker.exe
 
   # Candidate 6 — ABBYY FineReader Engine (local SDK bridge)
   - id: abbyy-fre12-heb-ara-eng

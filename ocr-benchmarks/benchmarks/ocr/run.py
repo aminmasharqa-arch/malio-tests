@@ -51,14 +51,17 @@ _PATH_PARAMS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _make_adapter(spec: EngineSpec) -> OCRAdapter:
+def _make_adapter(spec: EngineSpec, config_dir: Path | None = None) -> OCRAdapter:
     params = dict(spec.params)
     for key in _PATH_PARAMS.get(spec.adapter, ()):
         if params.get(key):
-            # Expand ~, environment variables so configs can reference
-            # user-level model dirs portably.
-            raw = str(params[key])
-            params[key] = Path(raw).expanduser()
+            # Expand ~, resolve against the config file's dir if relative,
+            # so configs can reference user-level model dirs or bridges
+            # alongside the config without hard-coding CWD.
+            p = Path(str(params[key])).expanduser()
+            if not p.is_absolute() and config_dir is not None:
+                p = (config_dir / p).resolve()
+            params[key] = p
     params.setdefault("engine_id", spec.id)
 
     if spec.adapter == "tesseract":
@@ -131,11 +134,12 @@ def _run_one(
         doc = adapter.recognize(pages)
         timings["recognize_ms"] = (time.perf_counter() - t0) * 1000
     except Exception as exc:
-        row["error"] = {
-            "label": "OCR_FAILURE",
-            "message": str(exc),
-            "traceback": traceback.format_exc(limit=3),
-        }
+        message = str(exc)
+        label = "BLOCKED" if message.startswith("BLOCKED:") else "OCR_FAILURE"
+        err: dict[str, Any] = {"label": label, "message": message}
+        if label == "OCR_FAILURE":
+            err["traceback"] = traceback.format_exc(limit=3)
+        row["error"] = err
         row["timings_ms"] = timings
         return row
 
@@ -198,7 +202,7 @@ def run_benchmark(
     load_errors: dict[str, str] = {}
     for spec in config.engines:
         try:
-            adapter = _make_adapter(spec)
+            adapter = _make_adapter(spec, config_dir=config.config_dir)
         except Exception as exc:
             msg = f"adapter construction failed: {exc}"
             print(f"warn: {spec.id} — {msg}", file=sys.stderr)

@@ -27,6 +27,7 @@ class RunConfig:
     run_id: str
     manifest: Path | None  # optional default — CLI --manifest overrides
     engines: tuple[EngineSpec, ...]
+    config_dir: Path | None = None  # base for resolving relative param paths
 
 
 def load_config(config_path: Path) -> RunConfig:
@@ -53,4 +54,5 @@ def load_config(config_path: Path) -> RunConfig:
         run_id=obj.get("run_id", config_path.stem),
         manifest=manifest,
         engines=engines,
+        config_dir=config_path.parent,
     )

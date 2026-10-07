@@ -8,6 +8,10 @@ venv/
 # OCR benchmark run artifacts (dated outputs, not source)
 ocr-benchmarks/benchmarks/runs/
 
+# .NET build output for the bridges (IronOCR, ABBYY). Keep source only.
+ocr-benchmarks/bridges/**/bin/
+ocr-benchmarks/bridges/**/obj/
+
 # Early ocr-tests / pdf-tests outputs (large, regeneratable)
 ocr-tests/results/
 pdf-tests/results/
