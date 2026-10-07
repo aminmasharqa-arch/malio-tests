@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Malio.OcrBench.AbbyyWorker</RootNamespace>
+    <AssemblyName>AbbyyWorker</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <!-- COM interop with the licensed FineReader Engine 12 happens at
+         runtime via Type.GetTypeFromProgID. No ABBYY NuGet reference;
+         the project compiles on any dev box, even without the SDK. -->
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    ABBYY FineReader Engine candidate #6 bridge for the OCR benchmark
+    harness (see ocr-benchmarks/OCR_BENCHMARK_ROADMAP.md §4 and §8.5).
+
+    Licensing: FRE requires a licensed installation of the SDK plus the
+    Hebrew/Arabic/English language modules. The runtime license key and
+    developer serial must be supplied via environment variables:
+      - ABBYY_FRE_DEVELOPER_SERIAL
+      - ABBYY_FRE_LICENSE_PATH (optional — alternative licensing method)
+    See README.md for the full access checklist.
+  -->
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <!-- COM interop types for .NET 9 (needed for Type.GetTypeFromProgID). -->
+    <PackageReference Include="System.Runtime.InteropServices" Version="4.3.0" />
+  </ItemGroup>
+
+</Project>

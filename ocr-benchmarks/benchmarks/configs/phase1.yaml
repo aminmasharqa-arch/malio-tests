@@ -63,9 +63,10 @@ engines:
       lang: Hebrew,English
       bridge_path: ../../bridges/ironocr-worker/bin/Release/net9.0/IronOcrWorker.exe
 
-  # Candidate 6 — ABBYY FineReader Engine (local SDK bridge)
+  # Candidate 6 — ABBYY FineReader Engine 12 (local SDK bridge)
+  # Set ABBYY_FRE_DEVELOPER_SERIAL (or ABBYY_FRE_LICENSE_PATH) before running.
   - id: abbyy-fre12-heb-ara-eng
     adapter: abbyy
     params:
-      lang: Hebrew,Arabic,English
-      # bridge_path: C:\dev\tools\abbyy-worker\bin\Release\AbbyyWorker.exe
+      lang: Hebrew,English
+      bridge_path: ../../bridges/abbyy-worker/bin/Release/net9.0/AbbyyWorker.exe
