@@ -7,6 +7,7 @@ venv/
 
 # OCR benchmark run artifacts (dated outputs, not source)
 ocr-benchmarks/benchmarks/runs/
+ocr-benchmarks/probes/runs/
 
 # .NET build output for the bridges (IronOCR, ABBYY). Keep source only.
 ocr-benchmarks/bridges/**/bin/
@@ -28,12 +29,19 @@ pdf-tests/invoices-pdf-testing/
 pdf-tests/new-pdf-250-invoices-carmel-tests/
 pdf-tests/hebrew-ocr-forms/
 
-# Secrets — license keys, API tokens. NEVER commit.
+# Secrets — license keys, API tokens, service-account JSONs. NEVER commit.
 .env
 .env.*
 !.env.example
 *.license
 *LicenseKey*
+# GCP service-account JSONs are placed at the ocr-benchmarks root by
+# convention — block any JSON directly at that level. Config/data JSONs
+# live under benchmarks/ subdirs, which stay allowed.
+ocr-benchmarks/*.json
+*-service-account*.json
+*gcp-key*.json
+*google-credentials*.json
 
 # Editor / OS cruft
 .vscode/
