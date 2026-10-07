@@ -28,6 +28,13 @@ pdf-tests/invoices-pdf-testing/
 pdf-tests/new-pdf-250-invoices-carmel-tests/
 pdf-tests/hebrew-ocr-forms/
 
+# Secrets — license keys, API tokens. NEVER commit.
+.env
+.env.*
+!.env.example
+*.license
+*LicenseKey*
+
 # Editor / OS cruft
 .vscode/
 .idea/

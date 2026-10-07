@@ -17,10 +17,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
+from benchmarks.ocr.env_file import loaded_from, merged_env
 from benchmarks.ocr.types import OCRDocument, OCRRegion, PageImage
 
 
@@ -41,6 +43,7 @@ class IronOCRAdapter:
     timeout_s: float = 300.0
     engine_id: str = ""
     _version: str = field(default="", init=False, repr=False)
+    _env: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.engine_id:
@@ -51,6 +54,13 @@ class IronOCRAdapter:
             raise RuntimeError(
                 f"BLOCKED: ironocr bridge_path missing. {ACCESS_CHECKLIST}"
             )
+        self._env = merged_env(Path(self.bridge_path).parent)
+        env_path = loaded_from(Path(self.bridge_path).parent)
+        if env_path and self._env.get("IRONOCR_LICENSE_KEY"):
+            print(
+                f"ironocr: using IRONOCR_LICENSE_KEY from {env_path}",
+                file=sys.stderr,
+            )
         # Smoke the worker with an empty request so we fail fast if the exe
         # can't start (missing .NET runtime, missing IronOcr assemblies, …).
         probe = subprocess.run(
@@ -60,6 +70,7 @@ class IronOCRAdapter:
             text=True,
             encoding="utf-8",
             timeout=self.timeout_s,
+            env=self._env,
         )
         try:
             payload = json.loads(probe.stdout or "{}")
@@ -98,6 +109,7 @@ class IronOCRAdapter:
             text=True,
             encoding="utf-8",
             timeout=self.timeout_s,
+            env=self._env or None,
         )
         if not proc.stdout:
             raise RuntimeError(
@@ -149,7 +161,9 @@ class IronOCRAdapter:
                 "worker_version": payload.get("worker_version"),
                 "lang": self.lang,
                 "bridge_path": str(self.bridge_path),
-                "license_env_present": bool(os.environ.get("IRONOCR_LICENSE_KEY")),
+                "license_env_present": bool(
+                    (self._env or os.environ).get("IRONOCR_LICENSE_KEY")
+                ),
                 "worker_timings_ms": payload.get("timings_ms"),
             },
         )

@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
+from benchmarks.ocr.env_file import merged_env
 from benchmarks.ocr.types import OCRDocument, OCRRegion, PageImage
 
 
@@ -49,6 +50,7 @@ class ABBYYAdapter:
     engine_id: str = ""
     _version: str = field(default="", init=False, repr=False)
     _prog_id: str = field(default="", init=False, repr=False)
+    _env: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.engine_id:
@@ -59,6 +61,7 @@ class ABBYYAdapter:
             raise RuntimeError(
                 f"BLOCKED: abbyy bridge_path missing. {ACCESS_CHECKLIST}"
             )
+        self._env = merged_env(Path(self.bridge_path).parent)
         # Probe with empty-pages request so missing SDK/license surfaces
         # fast without having to feed an image. The worker returns
         # REQUEST_EMPTY (normal) when it can start, or BLOCKED when the
@@ -70,6 +73,7 @@ class ABBYYAdapter:
             text=True,
             encoding="utf-8",
             timeout=self.timeout_s,
+            env=self._env,
         )
         try:
             payload = json.loads(probe.stdout or "{}")
@@ -109,6 +113,7 @@ class ABBYYAdapter:
             text=True,
             encoding="utf-8",
             timeout=self.timeout_s,
+            env=self._env or None,
         )
         if not proc.stdout:
             raise RuntimeError(
@@ -157,8 +162,8 @@ class ABBYYAdapter:
                 "lang": self.lang,
                 "bridge_path": str(self.bridge_path),
                 "license_env_present": bool(
-                    os.environ.get("ABBYY_FRE_DEVELOPER_SERIAL")
-                    or os.environ.get("ABBYY_FRE_LICENSE_PATH")
+                    (self._env or os.environ).get("ABBYY_FRE_DEVELOPER_SERIAL")
+                    or (self._env or os.environ).get("ABBYY_FRE_LICENSE_PATH")
                 ),
                 "worker_timings_ms": payload.get("timings_ms"),
             },
