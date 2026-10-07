@@ -185,6 +185,24 @@ def validate_israeli_id(value: str) -> bool:
 
 NUMBER_RE = r"[-+]?\d{1,3}(?:[, ]\d{3})*(?:\.\d+)?|[-+]?\d+(?:\.\d+)?"
 
+# OCR-tolerant number regex. Accepts three real-world formats seen in our
+# benchmark captures:
+#   - Western with comma-thousands + dot-decimal: "23,291.70"
+#   - European-style / Google Vision dot-thousands:     "23.291.70"
+#   - Plain numeric:                                     "193.22", "947"
+# Semantics (resolved in _to_float_ocr): if a number contains ≥2 '.' OR a
+# single '.' with exactly 3 digits after and no '.NN' decimal part, the
+# dots are thousands separators. Otherwise the last '.' is the decimal.
+#
+# No sign prefix (otherwise `17-02-2026` would be read as 17, -02, -2026).
+# Thousands separator is literal space, comma, or dot — NOT \s, so it does
+# not grab across line breaks.
+NUMBER_RE_OCR = (
+    r"\d{1,3}(?:[,. ]\d{3})+(?:[.,]\d{1,2})?"  # thousands groups + optional decimal
+    r"|\d+[.,]\d{1,2}"                            # single decimal
+    r"|\d+"                                        # plain integer
+)
+
 
 def _to_float(raw: Optional[str]) -> Optional[float]:
     if raw is None:
@@ -200,6 +218,127 @@ def _to_float(raw: Optional[str]) -> Optional[float]:
         return float(cleaned)
     except ValueError:
         return None
+
+
+def _to_float_ocr(raw: Optional[str]) -> Optional[float]:
+    """Parse amounts from OCR text with multiple separator conventions.
+
+    Rules (applied in order):
+    - Strip currency and whitespace.
+    - If both '.' and ',' are present: whichever appears LAST is the decimal.
+    - If only ',' is present and it has exactly 1-2 digits after → decimal.
+    - If only ',' is present and 3 digits after → thousands separator.
+    - If only '.' is present and it has 1-2 digits after → decimal.
+    - If only '.' is present and 3 digits after → thousands separator.
+    - Multiple same separators → all treated as thousands except possibly
+      the LAST if it has 1-2 trailing digits (Vision's 23.291.70 pattern).
+    """
+    if raw is None:
+        return None
+    s = raw.strip()
+    for ch in (" ", " ", "₪", "$", "€"):
+        s = s.replace(ch, "")
+    s = s.lstrip("+")
+    if not s:
+        return None
+
+    has_comma = "," in s
+    has_dot = "." in s
+
+    if has_comma and has_dot:
+        if s.rfind(".") > s.rfind(","):
+            # Western: commas are thousands, last dot is decimal.
+            s = s.replace(",", "")
+        else:
+            # European: dots are thousands, last comma is decimal.
+            s = s.replace(".", "").replace(",", ".", 1).replace(",", "")
+    elif has_dot:
+        parts = s.split(".")
+        if len(parts) > 2:
+            # 23.291.70 → last part is decimal if 1-2 digits, else all thousands.
+            if 1 <= len(parts[-1]) <= 2:
+                s = "".join(parts[:-1]) + "." + parts[-1]
+            else:
+                s = "".join(parts)
+        # len(parts) == 2 → single '.', treat as decimal (standard).
+    elif has_comma:
+        parts = s.split(",")
+        if len(parts) > 2:
+            if 1 <= len(parts[-1]) <= 2:
+                s = "".join(parts[:-1]) + "." + parts[-1]
+            else:
+                s = "".join(parts)
+        else:
+            # Single comma: 1-2 digits after → decimal, else thousands.
+            if 1 <= len(parts[-1]) <= 2:
+                s = parts[0] + "." + parts[-1]
+            else:
+                s = "".join(parts)
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+# =============================================================================
+# OCR-TOLERANT LABEL NORMALIZATION
+# =============================================================================
+# OCR engines mangle Hebrew labels in predictable ways (ח↔מ, ם↔ס, ת↔ח,
+# ו↔י↔ן, ע↔/). We can't make the parser tolerant to arbitrary noise, but
+# we CAN canonicalize a small set of known labels (עוסק מורשה, מע"מ, סה"כ,
+# מספר הקצאה, מחיר לפני הנחה, לתשלום) so the existing regex extractors
+# find them. We only touch label text — numbers remain untouched.
+#
+# Patterns were derived from actual engine output in benchmarks/runs/ and
+# probes/runs/. If you spot a new corruption, add it here with a comment
+# noting which engine × document first produced it.
+
+_FUZZY_LABEL_SUBS: tuple[tuple[str, str], ...] = (
+    # עוסק מורשה — tax-ID label on both issuer and customer sides.
+    # Variants seen: "/וסק חורשה" (Kraken), "עסקדר" (Vision — compressed),
+    # "pסוע השרומ" (Tesseract — Latin p for ע, reversed), "עוסק חורשה",
+    # "עוסק מורש[החה]".
+    (r"[עצ/\\p][ווי]?\s*ס[קכ]\s*[חמה][וויר]+[רד]?\s*ש[החה]", "עוסק מורשה"),
+    # מע"מ — VAT label. Variants: "חמ\"מ" (Kraken ח↔מ), "מע'מ", "חמ מ",
+    # "מ\"עמ", "מעם" (sofit swap), "מעמ". The first two chars allow full
+    # ח↔מ↔ע swapping because engines confuse all three stems; a quote
+    # mark + trailing [מם] is required to anchor the match (prevents
+    # matching inside unrelated 3-letter Hebrew words).
+    (r"[מחע][מחע][\"״׳'`][מם]", "מע\"מ"),
+    # סה"כ — subtotal/total label. Variants: "סהב", "סהכ", "שה\"כ",
+    # "שכ" (truncated), "סה״כ". Letters MUST be adjacent (no spaces) and
+    # the trailing [בכ] is a hard anchor to avoid matching across unrelated
+    # Hebrew words like "הפניקס חברה".
+    (r"[סש][החה][\"״׳'`]?[בכ](?![א-ת])", "סה\"כ"),
+    # לתשלום — "to be paid". Variants: "לתשחם" (Kraken), "שכלתשלום"
+    # (Vision glues סה\"כ + לתשלום), "כלתשלום". Letters must be adjacent.
+    (r"[לכ][תפ]ש[חל][וויי]?[מם]", "לתשלום"),
+    # מחיר לפני הנחה — subtotal label. Variants: "מתיר לפני הנחה" (Kraken ת↔ח),
+    # "חזיר לפני הנחה" (Vision ח↔מ, ז↔ח).
+    (r"[מח][חתז][זיי][רד]\s*לפני\s*[החה]נ[חה][החה]", "מחיר לפני הנחה"),
+    # מספר הקצאה — allocation-number label. Variants: "חספר הקצאה",
+    # "מספר הצצאה".
+    (r"[מח]ס[פפ]\s*[רד]?\s*[החה][קכ][צך][אה][חה]", "מספר הקצאה"),
+    # חשבונית מס — invoice label. Variants: "חשבונית מסנן" (Vision adds
+    # noise), "תינובשח" (reversed), "חשבוננית".
+    (r"[חת]ש\s*[בכ][וויי][נן]+[יוי]?[תחה]\s*[מם][סש]?", "חשבונית מס"),
+)
+
+_FUZZY_LABEL_REGEX: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(p), repl) for p, repl in _FUZZY_LABEL_SUBS
+)
+
+
+def fuzzy_normalize_labels(text: str) -> str:
+    """Rewrite common OCR-mangled Hebrew labels to their canonical forms.
+
+    Only labels are substituted — the surrounding tokens (numbers, vendor
+    names, dates) are preserved exactly. Idempotent: running twice is a
+    no-op.
+    """
+    for pattern, repl in _FUZZY_LABEL_REGEX:
+        text = pattern.sub(repl, text)
+    return text
 
 
 def _normalize_date(raw: str) -> Optional[str]:
@@ -320,27 +459,34 @@ def _extract_invoice_date(text: str, invoice: IsraeliInvoice) -> None:
         )
 
 
-def _extract_amounts(text: str, invoice: IsraeliInvoice) -> None:
+def _extract_amounts_impl(
+    text: str,
+    invoice: IsraeliInvoice,
+    *,
+    number_re: str,
+    to_float,  # callable: str -> Optional[float]
+    enable_positional_fallbacks: bool = False,
+) -> None:
     # ---- Grand total ---------------------------------------------------
     # Label-after-number variants (vendor "A" layout) and after-number
     # variants (vendor "B" layout: "462.52סה\"כ אחרי מע\"מ").
     total = _find_first(
-        rf"סה[\"״']?\s*כ[^\d\n]{{0,10}}({NUMBER_RE})[^\n]*לתשלום",
+        rf"סה[\"״']?\s*כ[^\d\n]{{0,10}}({number_re})[^\n]*לתשלום",
         text,
     ) or _find_first(
         rf"(?:לתשלום\s*סה[\"״']?\s*כ|"
         rf"סה[\"״']?\s*כ\s*(?:כולל|אחרי)\s*מע[\"״']?\s*מ|לתשלום)"
-        rf"[^\d\-+\n]{{0,15}}({NUMBER_RE})",
+        rf"[^\d\-+\n]{{0,15}}({number_re})",
         text,
     ) or _find_first(
-        rf"({NUMBER_RE})[^\d\-+\n]{{0,5}}סה[\"״']?\s*כ\s*"
+        rf"({number_re})[^\d\-+\n]{{0,5}}סה[\"״']?\s*כ\s*"
         rf"(?:אחרי|כולל)\s*מע[\"״']?\s*מ",
         text,
     ) or _find_first(
         # Variant: "{אחרי מע\"מ|מע\"מ אחרי} ... {number} ... סה\"כ"
         # (labels on left, number glued to סה"כ on the right)
         rf"(?:אחרי\s*מע[\"״']?\s*מ|מע[\"״']?\s*מ\s*אחרי)"
-        rf"[^\d\n]*({NUMBER_RE})[^\d\n]*סה[\"״']?\s*כ",
+        rf"[^\d\n]*({number_re})[^\d\n]*סה[\"״']?\s*כ",
         text,
     )
 
@@ -350,10 +496,10 @@ def _extract_amounts(text: str, invoice: IsraeliInvoice) -> None:
     # "\s*\d{1,2}" variants greedily ate the leading digit of amounts
     # like "8,757.30" when stuck to the label.
     vat = _find_first(
-        rf"מע[\"״׳']?\s*מ[\s₪$]{{0,5}}({NUMBER_RE})",
+        rf"מע[\"״׳']?\s*מ[\s₪$]{{0,5}}({number_re})",
         text,
     ) or _find_first(
-        rf"({NUMBER_RE})[\s₪$]{{0,5}}מע[\"״׳']?\s*מ"
+        rf"({number_re})[\s₪$]{{0,5}}מע[\"״׳']?\s*מ"
         rf"(?!\s*לפני)(?!\s*אחרי)",
         text,
     )
@@ -363,7 +509,7 @@ def _extract_amounts(text: str, invoice: IsraeliInvoice) -> None:
     subtotal: Optional[str] = None
     for m in re.finditer(
         rf"סה[\"״']?\s*כ(?!\s*לתשלום)(?!\s*(?:כולל|אחרי))"
-        rf"[^\d\-+\n]{{0,10}}({NUMBER_RE})(?![^\n]*לתשלום)",
+        rf"[^\d\-+\n]{{0,10}}({number_re})(?![^\n]*לתשלום)",
         text,
     ):
         subtotal = m.group(1)
@@ -372,7 +518,7 @@ def _extract_amounts(text: str, invoice: IsraeliInvoice) -> None:
     # Variant B: "number...סה\"כ לפני מע\"מ" (number before full phrase).
     if subtotal is None:
         subtotal = _find_first(
-            rf"({NUMBER_RE})[^\d\-+\n]{{0,5}}סה[\"״']?\s*כ\s*לפני\s*מע[\"״']?\s*מ",
+            rf"({number_re})[^\d\-+\n]{{0,5}}סה[\"״']?\s*כ\s*לפני\s*מע[\"״']?\s*מ",
             text,
         )
 
@@ -381,13 +527,78 @@ def _extract_amounts(text: str, invoice: IsraeliInvoice) -> None:
     if subtotal is None:
         subtotal = _find_first(
             rf"(?:לפני\s*מע[\"״']?\s*מ|מע[\"״']?\s*מ\s*לפני)"
-            rf"[^\d\n]*({NUMBER_RE})[^\d\n]*סה[\"״']?\s*כ",
+            rf"[^\d\n]*({number_re})[^\d\n]*סה[\"״']?\s*כ",
             text,
         )
 
-    invoice.amount_before_vat = _to_float(subtotal)
-    invoice.vat_amount = _to_float(vat)
-    invoice.total_amount = _to_float(total)
+    # ---- Positional VAT fallback (OCR mode only) ----------------------
+    # When Hebrew labels are too mangled for the regexes above but we can
+    # still see "18%" / "(18.00%)" next to a number, that number is VAT.
+    # Then subtotal/total are inferred by arithmetic from the surrounding
+    # numbers (A + VAT ≈ B).
+    if enable_positional_fallbacks and vat is None:
+        # Look for `NUMBER ( 18.00 % )` or `NUMBER 18%` within a short span.
+        m = re.search(
+            rf"({number_re})\s*\(?\s*18(?:[.,]\d{{1,2}})?\s*%\s*\)?",
+            text,
+        )
+        if m:
+            vat = m.group(1)
+            invoice.extraction_notes.append(
+                "vat_amount via positional 18%% fallback"
+            )
+
+    v_amount = to_float(subtotal)
+    v_vat = to_float(vat)
+    v_total = to_float(total)
+
+    # Positional subtotal/total: if we have VAT (from the 18% match above
+    # or from a labeled match), infer the missing subtotal/total.
+    # Strategy: VAT at 18% implies subtotal = VAT / 0.18 and
+    # total = subtotal + VAT. We then look for ACTUAL numbers in the
+    # text that match these expected values (within 1.0 for rounding).
+    # This is far more robust than enumerating all pairs, which lets
+    # giant 20+ digit allocation numbers hijack the result (A + VAT ≈ A).
+    if enable_positional_fallbacks and v_vat is not None:
+        if v_amount is None or v_total is None:
+            # Only accept VATs that look like real invoice VAT (not
+            # giant allocation-number-sized values).
+            if 0 < v_vat < 1_000_000:
+                expected_subtotal = v_vat / 0.18
+                expected_total = expected_subtotal + v_vat
+
+                def _find_near(expected: float) -> Optional[float]:
+                    best: Optional[tuple[float, float]] = None  # (|diff|, value)
+                    for m in re.finditer(number_re, text):
+                        try:
+                            val = to_float(m.group(0))
+                        except Exception:
+                            continue
+                        if val is None or not (0 < val < 10_000_000):
+                            continue
+                        diff = abs(val - expected)
+                        # Within 1.0 absolute OR 0.5% relative (whichever
+                        # is larger) to tolerate OCR rounding like
+                        # "₪34.78" when the exact VAT would be 34.7796.
+                        tol = max(1.0, expected * 0.005)
+                        if diff <= tol and (best is None or diff < best[0]):
+                            best = (diff, val)
+                    return best[1] if best else None
+
+                found_subtotal = _find_near(expected_subtotal)
+                found_total = _find_near(expected_total)
+                if found_subtotal is not None and v_amount is None:
+                    v_amount = found_subtotal
+                if found_total is not None and v_total is None:
+                    v_total = found_total
+                if found_subtotal is not None or found_total is not None:
+                    invoice.extraction_notes.append(
+                        "amount_before_vat / total via 18% arithmetic fallback"
+                    )
+
+    invoice.amount_before_vat = v_amount
+    invoice.vat_amount = v_vat
+    invoice.total_amount = v_total
 
     if (
         invoice.amount_before_vat is not None
@@ -404,11 +615,37 @@ def _extract_amounts(text: str, invoice: IsraeliInvoice) -> None:
             )
 
 
-def _extract_allocation_number(text: str, invoice: IsraeliInvoice) -> None:
+def _extract_amounts(text: str, invoice: IsraeliInvoice) -> None:
+    """Default (text-layer PDF) amount extractor."""
+    _extract_amounts_impl(text, invoice, number_re=NUMBER_RE, to_float=_to_float)
+
+
+def _extract_amounts_ocr(text: str, invoice: IsraeliInvoice) -> None:
+    """OCR-tolerant amount extractor — dot-thousands aware, positional fallbacks."""
+    _extract_amounts_impl(
+        text,
+        invoice,
+        number_re=NUMBER_RE_OCR,
+        to_float=_to_float_ocr,
+        enable_positional_fallbacks=True,
+    )
+
+
+def _extract_allocation_number(text: str, invoice: IsraeliInvoice, *, ocr_tolerant: bool = False) -> None:
     invoice.allocation_number = _find_first(
         r"(?:מספר\s*הקצאה|הקצאה)[^\d]{0,20}(\d{6,})",
         text,
     )
+    if invoice.allocation_number is None and ocr_tolerant:
+        # Positional fallback: if there's a 15+ digit run on the page and
+        # no other label-based match, treat it as the allocation. Israel
+        # Tax Authority allocations are typically 24-26 digits.
+        m = re.search(r"\b(\d{15,})\b", text)
+        if m:
+            invoice.allocation_number = m.group(1)
+            invoice.extraction_notes.append(
+                "allocation_number via long-digit positional fallback"
+            )
 
 
 VENDOR_LABEL_KEYWORDS = (
@@ -500,11 +737,20 @@ def extract_from_text(
     *,
     reverse_rtl_tokens: bool = True,
     fix_pymupdf_abbreviations: bool = True,
+    ocr_tolerant: bool = False,
 ) -> IsraeliInvoice:
     """
-    Extract fields from already-extracted text. For PyMuPDF text, keep the
-    defaults. For OCR text (Tesseract etc.) pass both flags False — OCR
-    engines emit Hebrew words in reading order already.
+    Extract fields from already-extracted text.
+
+    - For PyMuPDF text layer: keep the defaults.
+    - For OCR text (Tesseract, Kraken, Paddle, IronOCR, cloud): pass
+      `reverse_rtl_tokens=False`, `fix_pymupdf_abbreviations=False`, and
+      `ocr_tolerant=True`. The last flag enables:
+        * fuzzy Hebrew label normalization (fixes ח↔מ, ם↔ס, ת↔ח
+          mangling in known labels like עוסק מורשה, מע"מ, סה"כ, …)
+        * dot-thousands number parsing (Vision's "23.291.70" format)
+        * positional VAT fallback via the "18%" marker
+        * positional allocation-number fallback (long digit runs)
     """
     invoice = IsraeliInvoice(source_file=source)
     text = normalize_for_matching(
@@ -512,12 +758,17 @@ def extract_from_text(
         reverse_rtl_tokens=reverse_rtl_tokens,
         fix_pymupdf_abbreviations=fix_pymupdf_abbreviations,
     )
+    if ocr_tolerant:
+        text = fuzzy_normalize_labels(text)
 
     _extract_business_tax_id(text, invoice)
     _extract_invoice_number(text, invoice)
     _extract_invoice_date(text, invoice)
-    _extract_amounts(text, invoice)
-    _extract_allocation_number(text, invoice)
+    if ocr_tolerant:
+        _extract_amounts_ocr(text, invoice)
+    else:
+        _extract_amounts(text, invoice)
+    _extract_allocation_number(text, invoice, ocr_tolerant=ocr_tolerant)
     _extract_vendor_name(text, invoice)
 
     return invoice

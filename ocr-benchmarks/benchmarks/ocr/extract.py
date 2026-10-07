@@ -101,7 +101,13 @@ def assemble_text(doc: OCRDocument) -> str:
 
 
 def extract_invoice(doc: OCRDocument, source_file: str) -> Any:
-    """One entry point every adapter funnels through. Returns an IsraeliInvoice."""
+    """One entry point every adapter funnels through. Returns an IsraeliInvoice.
+
+    Uses `ocr_tolerant=True` on the shared parser so Hebrew label noise and
+    dot-thousands amounts (e.g., Google Vision's "23.291.70") get recovered
+    instead of silently dropped — see pdf-tests/extractor.py docstring for
+    the full set of OCR-aware behaviors this unlocks.
+    """
     extractor = _load_extractor()
     text = assemble_text(doc)
     return extractor.extract_from_text(
@@ -109,4 +115,5 @@ def extract_invoice(doc: OCRDocument, source_file: str) -> Any:
         source=source_file,
         reverse_rtl_tokens=False,
         fix_pymupdf_abbreviations=False,
+        ocr_tolerant=True,
     )
