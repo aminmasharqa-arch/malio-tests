@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from benchmarks.ocr import inspect
+from benchmarks.ocr import repo_inspect
 
 
 def _default_repo_root() -> Path:
@@ -83,7 +83,7 @@ def cmd_inspect_repo(args: argparse.Namespace) -> int:
     if not repo_root.exists():
         print(f"error: repo root does not exist: {repo_root}", file=sys.stderr)
         return 2
-    out_path, n_hits = inspect.run(repo_root, args.out.resolve() if args.out else None)
+    out_path, n_hits = repo_inspect.run(repo_root, args.out.resolve() if args.out else None)
     print(f"inspect-repo: wrote {out_path} ({n_hits} hits)")
     return 0
 

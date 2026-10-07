@@ -103,17 +103,13 @@ def assemble_text(doc: OCRDocument) -> str:
 def extract_invoice(doc: OCRDocument, source_file: str) -> Any:
     """One entry point every adapter funnels through. Returns an IsraeliInvoice.
 
-    Uses `ocr_tolerant=True` on the shared parser so Hebrew label noise and
-    dot-thousands amounts (e.g., Google Vision's "23.291.70") get recovered
-    instead of silently dropped — see pdf-tests/extractor.py docstring for
-    the full set of OCR-aware behaviors this unlocks.
+    Routes to `benchmarks.ocr.ocr_invoice_extractor.extract_from_ocr_text`,
+    which is format-first (enumerate numbers/dates then disambiguate) rather
+    than label-anchored. The label-anchored `pdf-tests/extractor.py` is
+    tuned for PyMuPDF text-layer output on well-formed PDFs; it is NOT
+    appropriate for phone-photo OCR where Hebrew labels get mangled.
     """
-    extractor = _load_extractor()
+    from benchmarks.ocr.ocr_invoice_extractor import extract_from_ocr_text
+
     text = assemble_text(doc)
-    return extractor.extract_from_text(
-        text,
-        source=source_file,
-        reverse_rtl_tokens=False,
-        fix_pymupdf_abbreviations=False,
-        ocr_tolerant=True,
-    )
+    return extract_from_ocr_text(text, source=source_file)
