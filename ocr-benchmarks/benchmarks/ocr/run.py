@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.ocr.config import EngineSpec, RunConfig
-from benchmarks.ocr.extract import extract_invoice
+from benchmarks.ocr.extract import assemble_text, extract_invoice
 from benchmarks.ocr.manifest import ManifestEntry
 from benchmarks.ocr.types import OCRAdapter, PageImage
 
@@ -147,6 +147,24 @@ def _run_one(
     row["region_count"] = len(doc.regions)
     row["page_sizes"] = doc.page_sizes
 
+    # Expose the raw text the downstream parser sees, plus trimmed region
+    # geometry/confidence for later error-attribution analysis. The engine-
+    # specific `raw_response` is deliberately dropped — it would bloat
+    # results.jsonl and already lives in-process during the run.
+    assembled = assemble_text(doc)
+    row["assembled_text"] = assembled
+    row["regions"] = [
+        {
+            "page": r.page,
+            "text": r.text,
+            "granularity": r.granularity,
+            "confidence": r.confidence,
+            "reading_order": r.reading_order,
+            "polygon": r.polygon,
+        }
+        for r in doc.regions
+    ]
+
     try:
         t0 = time.perf_counter()
         invoice = extract_invoice(doc, source_file=entry.source_file)
@@ -225,6 +243,8 @@ def run_benchmark(
             adapters.append((spec, adapter, msg))
 
     results_path = run_dir / "results.jsonl"
+    ocr_text_dir = run_dir / "ocr_text"
+    ocr_text_dir.mkdir(exist_ok=True)
     n_rows = 0
     with results_path.open("w", encoding="utf-8") as out:
         for entry in manifest_entries:
@@ -232,6 +252,20 @@ def run_benchmark(
                 row = _run_one(adapter, entry, blocked_reason=blocked)
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 n_rows += 1
+
+                # Sidecar: one human-readable text file per (document × engine)
+                # so you can `cat` the raw OCR for any pair without parsing
+                # JSONL. Blocked / errored rows get a short status file.
+                text_path = ocr_text_dir / f"{entry.document_id}__{spec.id}.txt"
+                if row.get("assembled_text") is not None:
+                    text_path.write_text(row["assembled_text"], encoding="utf-8")
+                else:
+                    err = row.get("error") or {}
+                    text_path.write_text(
+                        f"[{err.get('label', 'NO_TEXT')}] {err.get('message', '')}",
+                        encoding="utf-8",
+                    )
+
                 status = "ok" if row.get("error") is None else row["error"]["label"]
                 print(f"  {entry.document_id} × {spec.id}: {status}")
 
