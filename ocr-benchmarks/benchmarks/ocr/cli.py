@@ -42,6 +42,24 @@ def _build_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--manifest", type=Path, required=True, help="Manifest with ground_truth to score against.")
     p_report.add_argument("--out-dir", type=Path, default=None, help="Where to write the four report artifacts (default: --run-dir).")
 
+    p_seed = sub.add_parser(
+        "seed-truth",
+        help="Walk an invoice folder, run Tesseract, write a manifest JSONL with pre-populated ground_truth stubs for adjudication.",
+    )
+    p_seed.add_argument("--input-dir", type=Path, required=True, help="Folder containing invoice images/PDFs.")
+    p_seed.add_argument("--out", type=Path, required=True, help="Output manifest JSONL path. Appended by default; use --overwrite to replace.")
+    p_seed.add_argument("--split", default="development", help="Split label for the generated entries.")
+    p_seed.add_argument("--language", default="heb", help="Document language tag (heb | ara | eng | mixed | ...).")
+    p_seed.add_argument("--tesseract-lang", default="heb+eng", help="Tesseract lang code(s) for the seeding pass.")
+    p_seed.add_argument("--pdf-dpi", type=int, default=300, help="DPI for rasterizing PDF pages.")
+    p_seed.add_argument("--max-docs", type=int, default=None, help="Cap the number of documents seeded.")
+    p_seed.add_argument("--ocr-sample-lines", type=int, default=10, help="How many OCR lines to echo into annotation.ocr_sample.")
+    p_seed.add_argument("--rendered-dir", type=Path, default=None, help="Where to render PDF pages (default: <out dir>/rendered/).")
+    p_seed.add_argument("--tessdata-dir", type=Path, default=None)
+    p_seed.add_argument("--tesseract-cmd", type=Path, default=None)
+    p_seed.add_argument("--overwrite", action="store_true", help="Replace the output manifest instead of appending.")
+    p_seed.add_argument("--tag", action="append", dest="tags", default=None, help="Tag to attach to every seeded entry (repeat for multiple).")
+
     p_smoke = sub.add_parser(
         "smoke",
         help="Run one engine on one image and print region summary — adapter smoke test.",
@@ -180,6 +198,34 @@ def cmd_validate_truth(args: argparse.Namespace) -> int:
     return 0 if not result.errors else 1
 
 
+def cmd_seed_truth(args: argparse.Namespace) -> int:
+    from benchmarks.ocr.seed_truth import SeedOptions, seed
+
+    opts = SeedOptions(
+        input_dir=args.input_dir.resolve(),
+        out_path=args.out.resolve(),
+        split=args.split,
+        language=args.language,
+        tesseract_lang=args.tesseract_lang,
+        pdf_dpi=args.pdf_dpi,
+        max_docs=args.max_docs,
+        emit_ocr_sample_lines=args.ocr_sample_lines,
+        rendered_dir=args.rendered_dir.resolve() if args.rendered_dir else None,
+        tessdata_dir=args.tessdata_dir.resolve() if args.tessdata_dir else None,
+        tesseract_cmd=args.tesseract_cmd.resolve() if args.tesseract_cmd else None,
+        overwrite=args.overwrite,
+        tags=tuple(args.tags) if args.tags else (),
+    )
+    result = seed(opts)
+    print(
+        f"seed-truth: seeded={result.seeded} "
+        f"skipped_existing={result.skipped_existing} "
+        f"errors={len(result.errors)} "
+        f"→ {result.manifest_path}"
+    )
+    return 0 if not result.errors else 1
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     from benchmarks.ocr.report import generate_report
 
@@ -213,4 +259,6 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_run(args)
     if args.command == "report":
         return cmd_report(args)
+    if args.command == "seed-truth":
+        return cmd_seed_truth(args)
     return 2
