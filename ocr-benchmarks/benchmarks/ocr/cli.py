@@ -39,6 +39,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_report = sub.add_parser("report", help="Generate benchmark report from a completed run.")
     p_report.add_argument("--run-dir", type=Path, required=True)
+    p_report.add_argument("--manifest", type=Path, required=True, help="Manifest with ground_truth to score against.")
+    p_report.add_argument("--out-dir", type=Path, default=None, help="Where to write the four report artifacts (default: --run-dir).")
 
     p_smoke = sub.add_parser(
         "smoke",
@@ -161,9 +163,38 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _not_implemented(name: str) -> int:
-    print(f"{name}: not implemented yet (see OCR_BENCHMARK_ROADMAP.md §8)", file=sys.stderr)
-    return 2
+def cmd_validate_truth(args: argparse.Namespace) -> int:
+    from benchmarks.ocr.validate_truth import validate_manifest
+
+    manifest_path = args.manifest.resolve()
+    if not manifest_path.exists():
+        print(f"error: manifest not found: {manifest_path}", file=sys.stderr)
+        return 2
+    result = validate_manifest(manifest_path)
+    for line in result.messages:
+        print(line)
+    print(
+        f"validate-truth: {result.ok}/{result.total} entries valid, "
+        f"{result.with_truth} with ground_truth, {len(result.errors)} errors"
+    )
+    return 0 if not result.errors else 1
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    from benchmarks.ocr.report import generate_report
+
+    run_dir = args.run_dir.resolve()
+    if not run_dir.exists():
+        print(f"error: run dir not found: {run_dir}", file=sys.stderr)
+        return 2
+    manifest_path = args.manifest.resolve()
+    if not manifest_path.exists():
+        print(f"error: manifest not found: {manifest_path}", file=sys.stderr)
+        return 2
+    out_dir = args.out_dir.resolve() if args.out_dir else None
+    written = generate_report(run_dir, manifest_path, out_dir)
+    print(f"report: wrote four artifacts under {written}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -177,9 +208,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "smoke":
         return cmd_smoke(args)
     if args.command == "validate-truth":
-        return _not_implemented("validate-truth")
+        return cmd_validate_truth(args)
     if args.command == "run":
         return cmd_run(args)
     if args.command == "report":
-        return _not_implemented("report")
+        return cmd_report(args)
     return 2

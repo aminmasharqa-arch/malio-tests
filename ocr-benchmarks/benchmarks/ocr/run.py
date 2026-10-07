@@ -55,7 +55,10 @@ def _make_adapter(spec: EngineSpec) -> OCRAdapter:
     params = dict(spec.params)
     for key in _PATH_PARAMS.get(spec.adapter, ()):
         if params.get(key):
-            params[key] = Path(params[key])
+            # Expand ~, environment variables so configs can reference
+            # user-level model dirs portably.
+            raw = str(params[key])
+            params[key] = Path(raw).expanduser()
     params.setdefault("engine_id", spec.id)
 
     if spec.adapter == "tesseract":

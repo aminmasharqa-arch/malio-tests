@@ -46,13 +46,15 @@ engines:
       # tessdata_dir: C:\Program Files\Tesseract-OCR\tessdata_fast
       # tesseract_cmd: C:\Program Files\Tesseract-OCR\tesseract.exe
 
-  # Candidate 4 — Kraken 7.1 + multilingual medium
+  # Candidate 4 — Kraken 7.1 + multilingual medium (Zenodo 21788410)
   - id: kraken-medium-cpu
     adapter: kraken
     params:
       device: cpu
-      # recognition_model: C:\models\kraken\medium.safetensors
-      # segmentation_model: C:\models\kraken\segmentation.safetensors
+      text_direction: horizontal-rl
+      # Downloaded via: kraken get 10.5281/zenodo.21788410
+      recognition_model: ~/AppData/Local/htrmopo/htrmopo/1980fa54-b49e-5256-95b6-928290bc48f8/medium.safetensors
+      # segmentation_model omitted → use Kraken's bundled blla.mlmodel
 
   # Candidate 5 — IronOCR (local .NET bridge)
   - id: ironocr-heb-ara-eng
