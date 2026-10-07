@@ -13,18 +13,23 @@ manifest: ../data/manifest.example.jsonl
 
 engines:
   # Candidate 1 — RivoksLab/paddleocr-hebrew
+  # First run auto-downloads models (~180 MB) from Hugging Face
+  # (Rivok/paddleocr-hebrew) into ~/.cache/huggingface. Pin a snapshot
+  # via params.models_dir for reproducibility.
   - id: paddleocr-hebrew-server-svtrv2-word
     adapter: paddleocr-hebrew
     params:
       detection: word
       recognizer: server-svtrv2
-      # models_dir: C:\models\paddleocr-hebrew
+      providers: ["CPUExecutionProvider"]
+      # models_dir: ~/.cache/huggingface/hub/models--Rivok--paddleocr-hebrew/snapshots/<commit>
   - id: paddleocr-hebrew-server-svtrv2-line
     adapter: paddleocr-hebrew
     params:
       detection: line
       recognizer: server-svtrv2
-      # models_dir: C:\models\paddleocr-hebrew
+      providers: ["CPUExecutionProvider"]
+      # models_dir: ~/.cache/huggingface/hub/models--Rivok--paddleocr-hebrew/snapshots/<commit>
 
   # Candidate 2 — Tesseract + tessdata_best
   - id: tesseract-best-heb-eng-psm3

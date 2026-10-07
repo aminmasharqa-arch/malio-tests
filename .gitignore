@@ -12,6 +12,12 @@ ocr-benchmarks/benchmarks/runs/
 ocr-benchmarks/bridges/**/bin/
 ocr-benchmarks/bridges/**/obj/
 
+# Third-party source trees cloned into the repo (nested .git). Install
+# instructions live in third_party/README.md; the clones themselves stay
+# out of git — their upstream URL + pinned commit are enough.
+ocr-benchmarks/third_party/*
+!ocr-benchmarks/third_party/README.md
+
 # Early ocr-tests / pdf-tests outputs (large, regeneratable)
 ocr-tests/results/
 pdf-tests/results/

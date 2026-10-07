@@ -20,3 +20,11 @@ PyYAML>=6.0
 # Candidate #4 — Kraken 7.1 is pinned. Pulls torch + lightning + friends.
 kraken==7.1
 
+# Candidate #1 — paddleocr-hebrew is NOT on PyPI. Install from source
+# after cloning (see ocr-benchmarks/third_party/README.md):
+#   git clone https://github.com/RivoksLab/paddleocr-hebrew \
+#     ocr-benchmarks/third_party/paddleocr-hebrew
+#   pip install -e ocr-benchmarks/third_party/paddleocr-hebrew
+# The adapter needs `huggingface_hub` to auto-download ONNX weights.
+huggingface_hub>=2.0
+
